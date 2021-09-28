@@ -10,7 +10,7 @@
 - [ ] add downloader_config.json to set keywords of common websites.
 - [ ] expand to a genreal downloader and restruct the code.
 
-## 0.2.0.2 - 2021-09-26 - optimize
+## 0.2.0.4 - 2021-09-28 - optimize
 
 ### Added:
 - add a new class Requests, which wraps requests, to prevent to be hampered by websites.

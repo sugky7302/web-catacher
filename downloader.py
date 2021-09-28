@@ -15,20 +15,23 @@ class Requests:
     user_agent = UserAgent()
 
     @classmethod
-    def get(cls, url, headers={}, params=None, cookies=None, stream=False):
+    def get(cls, url, headers={}, params=None, proxies=False, cookies=None, stream=False):
         # 添加隨機的使用者代理
         headers['User-Agent'] = cls.user_agent.random
 
-        # 使用代理（記得打開docker的proxypool），不然會造成[WinError] 10061
-        # proxy = requests.get('http://localhost:5555/random').text.strip()
-        # proxies = {
-        #     'http': 'http://' + proxy,
-        #     'https': 'https://' + proxy,
-        # }
+        if proxies:
+            # 使用代理（記得打開docker的proxypool），不然會造成[WinError] 10061
+            proxy = requests.get('http://localhost:5555/random').text.strip()
+            proxies = {
+                'http': 'http://' + proxy,
+                'https': 'https://' + proxy,
+            }
+        else:
+            proxies = None
 
         try:
             # NOTE: 報錯400是因為urllib3版本太高
-            return requests.get(url, headers=headers, params=params, cookies=cookies, stream=stream)
+            return requests.get(url, headers=headers, params=params, proxies=proxies, cookies=cookies, stream=stream)
         except ConnectionError:
             print("Connection error")
             return None
