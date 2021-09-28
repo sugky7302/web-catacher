@@ -19,12 +19,12 @@ class Requests:
         # 添加隨機的使用者代理
         headers['User-Agent'] = cls.user_agent.random
 
-        # 使用代理（記得打開docker的proxypool）
-        proxy = requests.get('http://localhost:5555/random').text.strip()
-        proxies = {
-            'http': 'http://' + proxy,
-            'https': 'https://' + proxy,
-        }
+        # 使用代理（記得打開docker的proxypool），不然會造成[WinError] 10061
+        # proxy = requests.get('http://localhost:5555/random').text.strip()
+        # proxies = {
+        #     'http': 'http://' + proxy,
+        #     'https': 'https://' + proxy,
+        # }
 
         try:
             # NOTE: 報錯400是因為urllib3版本太高
@@ -42,6 +42,7 @@ class UrlCatcher:
         self.__url = url
         self.__videos = {}
         # self.__config = Json("./config.json")
+        self.__task_count = 0
         self.__threads = []  # 防止download先於thread前執行，因此要把thread存入並使用.join()來等待
         self.__thread_count = thread_count
         self.__lock = Lock()
@@ -54,22 +55,21 @@ class UrlCatcher:
             "Upgrade-Insecure-Requests": "1", 
         }
 
-    def search(self, key=None, page=0):
-        url = self.__url + '/video/search' if key else self.__url
-        params = {'search' : key} if key else {}
+    def searchAll(self, key=None, page_start=1, page_end=1):
+        self.clear()
 
+        # 獲取總頁數
+        url, params = self.getVideoUrlAndParams(key, page_start)
         max_page = self.__getMaxPage(Requests.get(url, headers=self.__headers, params=params))
         print(f'[{time.ctime()}] {key} has {max_page} pages.')
-        # if page < 1:
-        #     self.__getVideoUrls(url, params, max_page)
-        # else:
-        #     self.__getVideoUrls(url, params, max(1, min(page, max_page)))
+
+        self.__getVideoUrls(key, max(1,page_start), min(page_end, max_page))
 
         return True
 
     def __getMaxPage(self, rs):
         max_page = 0
-        print(rs.text)
+
         # NOTE: 設定 len(style) == 1 是因為要排除某些也使用greyButton但不是頁碼的DOM物件
         while len(buttons := [ele for ele in BS(rs.content.decode(), 'html.parser')('a') if (style := ele.get('class')) and len(style) == 1 and ('greyButton' in style)]) > 0:
             # NOTE: 因為ele是BeautifulSoup的Tag物件，可以直接用text取值
@@ -81,19 +81,11 @@ class UrlCatcher:
         
         return max_page
 
-    def __getVideoUrls(self, url, params, page):
-        if page == 0: return
-
+    def __getVideoUrls(self, key, page_start, page_end):
         # NOTE: 不設定range(1, max) = [1, max - 1]，所以要設定 +1 讓它到最後一頁
-        for i in range(1, page + 1):
-            if page > 1:
-                params['page'] = i
-
-                # NOTE: 處理pornhub第一頁和第二頁的網址多一個/video的問題。
-                url += "/video" if url == self.__url else ""
-
+        for i in range(page_start, page_end + 1):
             # NOTE: 因為dict是傳址，所以要用copy函數解決page都是一樣的問題。
-            self.__queue.put((url, params.copy()))
+            self.__queue.put(self.getVideoUrlAndParams(key, i))
 
         # 新增進度條
         self.__task_count = 0
@@ -103,7 +95,7 @@ class UrlCatcher:
             self.__threads.append(t)
 
         t = time.time()
-        while self.__task_count != page:
+        while self.__task_count != (page := page_end - page_start):
             # NOTE: 解決所有thread都還在執行時，剩餘時間估算錯誤的問題
             if self.__task_count == 0:
                 cost_time = "??:??:??"
@@ -113,27 +105,58 @@ class UrlCatcher:
             print(f"[{time.ctime()}] copy link: {self.__task_count}/{page}({(self.__task_count) / page:.2%}) - remain=" + cost_time)
             time.sleep(1)
 
+        # NOTE: 等待所有copy link都完成才能做寫入的動作，不然download都會早於thread前寫入
+        for i in range(len(self.__threads)):
+            self.__threads[i].join()
+
         print(f"[{time.ctime()}] copy link: {page}/{page}(100%) - total=" + time.strftime("%H:%M:%S", time.gmtime(time.time() - t)))
+
+    def search(self, key=None, page=1):
+        self.clear()
+
+        # NOTE: 為了不破壞原本的平行處理機制，因此還是把 url 跟 params 存入queue裡面，
+        #       然後 getVideoUrl從queue裡面撈值進行處理
+        self.__queue.put(self.__changeUrlAndParams(key, page))
+        self.__getVideoUrl()
+
+        return True
+
+    def clear(self):
+        self.__videos = {}
+        self.__threads = []
+
+    def __changeUrlAndParams(self, key, page):
+        url = self.__url + '/video/search' if key else self.__url
+        params = {'search' : key} if key else {}
+
+        if page > 1:
+            params['page'] = page
+
+            # NOTE: 處理pornhub第一頁和第二頁的網址多一個/video的問題。
+            url += "/video" if url == self.__url else ""
+
+        return url, params
 
     def __getVideoUrl(self):
         while self.__queue.qsize() != 0:
             sleep()  # 太快響應會造成pornhub鎖ip
             args = self.__queue.get_nowait()
-            rs = Requests.get(args[0].strip('\n'), params=args[1])
+            rs = Requests.get(args[0], params=args[1], headers=self.__headers)
             videos = {}
 
             # 讀取網頁所有影片的DOM物件
-            for i, v in enumerate([ele for ele in BS(rs.content.decode(), 'html.parser')('a') if (href := ele.get('href')) and href.find('viewkey') != -1]):
+            for i, v in enumerate(tqdm([ele for ele in BS(rs.content.decode(), 'html.parser')('a') if (href := ele.get('href')) and href.find('viewkey') != -1], desc='catch links')):
+                # 網址統一
+                # NOTE: 要放在搜尋標題之前，不然Requese會因為href不正確而發生[Errno 11001] getaddrinfo failed'的錯誤
+                v['href'] = (self.__url if v.get('href').find(self.__url) == -1 else "") + v.get('href')
+
                 if v.get('title') is None:
                     # NOTE: 根據href開啟影片網址然後去抓title
                     sleep()  # 太快響應會造成pornhub鎖ip
-                    video = [ele for ele in BS(Requests.get(self.__url + v.get('href')).content.decode(), 'html.parser')('span') if (style := ele.get('class')) and 'inlineFree' in style]
+                    video = [ele for ele in BS(Requests.get(v.get('href'), headers=self.__headers).content.decode(), 'html.parser')('span') if (style := ele.get('class')) and 'inlineFree' in style]
 
                     # NOTE: 如果找不到標題就命名unknown
                     v['title'] = video[0].text if len(video) > 0 else f"unknown{i}"
-                
-                # 網址統一
-                v['href'] = (self.__url if v.get('href').find(self.__url) == -1 else "") + v.get('href')
 
                 # NOTE: 利用字典的特性來排除重複的網址
                 if v.get('href') not in videos:
@@ -148,12 +171,7 @@ class UrlCatcher:
 
             self.__queue.task_done()
 
-
     def download(self, filename):
-        # NOTE: 等待所有copy link都完成才能做寫入的動作，不然download都會早於thread前寫入
-        for i in range(self.__thread_count):
-            self.__threads[i].join()
-
         with open(filename + ".txt", 'w', encoding='UTF-8') as f:
             for url, title in tqdm(self.__videos.items(), total=len(self.__videos), desc="download to file"):
                 f.write(title + "(" + url + ')\n')
@@ -163,7 +181,4 @@ class UrlCatcher:
 if __name__ == "__main__":
     obj = UrlCatcher('https://www.pornhub.com', thread_count=1)
     obj.search('Lesbian', page=5)
-    # obj.download(filename="pornhub_lesbian")
-
-
-
+    obj.download(filename="pornhub_lesbian")
