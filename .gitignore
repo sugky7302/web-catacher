@@ -2,5 +2,6 @@
 config.json
 downloader1.py
 
-# 忽略所有下載網址
+
 *.txt
+pornhub.txt
