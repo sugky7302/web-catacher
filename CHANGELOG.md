@@ -1,14 +1,9 @@
 # CHANGELOG
 
-## Todo:
-- [x] add some mechanisms to prevent in-debug.
-  - [x] headers
-  - [x] proxy
-  - [x] random delay time
-  - [x] referer
-  - [x] user-agent
-- [ ] add downloader_config.json to set keywords of common websites.
-- [ ] expand to a genreal downloader and restruct the code.
+## 1.0.0.5 - 2021-10-07 - release
+
+### Fixed:
+- **[downloader]** fix a problem of calling wrong function name.
 
 ## 0.2.0.4 - 2021-09-28 - optimize
 

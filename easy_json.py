@@ -89,7 +89,7 @@ class Json(object):
         if not os.path.isfile(path):
             return
 
-        with open(path, 'r') as f:
+        with open(path, 'r', encoding='utf-8') as f:
             self.__string = f.read().encode('utf-8')
             self.__string_sync_object()
 
@@ -107,7 +107,7 @@ class Json(object):
         self.__string_sync_object()
 
     def __string_sync_object(self):
-        self.__object = json.loads(self.__string, object_pairs_hook=ODict, encoding='utf-8')
+        self.__object = json.loads(self.__string, object_pairs_hook=ODict)
 
     @property
     def object(self):

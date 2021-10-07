@@ -8,6 +8,8 @@ import random
 from fake_useragent import UserAgent
 # from easy_json import Json
 
+HTTP = "https://"
+
 random.seed()
 sleep = lambda: time.sleep(random.uniform(1., 5.))
 
@@ -42,7 +44,7 @@ class Requests:
 
 class UrlCatcher:
     def __init__(self, url, thread_count=1):
-        self.__url = url
+        self.__url = HTTP + url
         self.__videos = {}
         # self.__config = Json("./config.json")
         self.__task_count = 0
@@ -62,7 +64,7 @@ class UrlCatcher:
         self.clear()
 
         # 獲取總頁數
-        url, params = self.getVideoUrlAndParams(key, page_start)
+        url, params = self.__changeUrlAndParams(key, page_start)
         max_page = self.__getMaxPage(Requests.get(url, headers=self.__headers, params=params))
         print(f'[{time.ctime()}] {key} has {max_page} pages.')
 
@@ -88,7 +90,7 @@ class UrlCatcher:
         # NOTE: 不設定range(1, max) = [1, max - 1]，所以要設定 +1 讓它到最後一頁
         for i in range(page_start, page_end + 1):
             # NOTE: 因為dict是傳址，所以要用copy函數解決page都是一樣的問題。
-            self.__queue.put(self.getVideoUrlAndParams(key, i))
+            self.__queue.put(self.__changeUrlAndParams(key, i))
 
         # 新增進度條
         self.__task_count = 0
@@ -98,7 +100,7 @@ class UrlCatcher:
             self.__threads.append(t)
 
         t = time.time()
-        while self.__task_count != (page := page_end - page_start):
+        while self.__task_count != (page := page_end - page_start + 1):
             # NOTE: 解決所有thread都還在執行時，剩餘時間估算錯誤的問題
             if self.__task_count == 0:
                 cost_time = "??:??:??"
@@ -182,6 +184,6 @@ class UrlCatcher:
         return True
 
 if __name__ == "__main__":
-    obj = UrlCatcher('https://www.pornhub.com', thread_count=1)
-    obj.search('Lesbian', page=5)
-    obj.download(filename="pornhub_lesbian")
+    obj = UrlCatcher('www.youtube.com', thread_count=5)
+    obj.searchAll('music', page_end=5)
+    obj.download(filename="test")

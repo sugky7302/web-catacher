@@ -1,5 +1,19 @@
 {
     "www.pornhub.com":{
-        
+        "index": "",
+        "search": "/video/search"
+    },
+    "91porn.com":{
+        "index": "/index.php",
+        "main": "v.php",
+        "main_params":{
+            "category": "rf",
+            "viewtype": "basic"
+        },
+        "search": "/search_result.php",
+        "search_params":{
+            "search_id": "",
+            "search_type": "search_videos",
+            "min_duration": ""}
     }
 }
